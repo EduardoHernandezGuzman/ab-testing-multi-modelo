@@ -176,6 +176,22 @@ margin: 0 auto;
 
 
 # =========================
+# Helper: dataframe full width compatible (Cloud + local)
+# =========================
+def df_full_width(df, **kwargs):
+    """
+    Streamlit ha cambiado la API de `st.dataframe`.
+    - En algunos entornos funciona `width="stretch"`
+    - En otros, hay que usar `use_container_width=True`
+    Este helper intenta `width="stretch"` y hace fallback.
+    """
+    try:
+        st.dataframe(df, width="stretch", **kwargs)
+    except TypeError:
+        st.dataframe(df, use_container_width=True, **kwargs)
+
+
+# =========================
 # Helpers de estado
 # =========================
 def reset_wizard():
@@ -186,7 +202,6 @@ def reset_wizard():
     st.session_state.ruta_ok = False
     st.session_state.selected_model_label = None
     st.session_state.show_app = False
-    # Nota: NO tocamos datos de calculadora aquí; se reinicia cuando entras a app
 
 
 def init_wizard_state():
@@ -231,8 +246,13 @@ def check_route_and_set_model():
         st.session_state.selected_model_label = None
 
 
+def go_to_step(step: int):
+    st.session_state.wizard_step = step
+    st.rerun()
+
+
 # =========================
-# Wizard UI (Figma-like)
+# Wizard UI (ACUMULATIVO)
 # =========================
 def render_wizard():
     st.markdown('<div class="center-wrap">', unsafe_allow_html=True)
@@ -242,24 +262,26 @@ def render_wizard():
 
     step = st.session_state.wizard_step
 
-    # Step 1: elegir enfoque
+    # --------------------------------------------------
+    # STEP 1: Elegir enfoque (siempre visible)
+    # --------------------------------------------------
+    st.markdown("""
+    <div class="result-card">
+        <div class="choice-title">¡Bienvenido a la calculadora de tests A/B!</div>
+        <div class="choice-text">
+            Esta calculadora te ayudará a tomar decisiones basadas en datos eligiendo entre el enfoque bayesiano o frecuentista, los dos modelos estadísticos más comunes.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="result-card">
+        <div class="choice-title">Elige el modelo que deseas utilizar para analizar tu test A/B</div>
+        <div class="choice-text">¿No sabes cuál elegir? No te preocupes: te explico cada uno de forma sencilla.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     if step == 1:
-        st.markdown("""
-        <div class="result-card">
-            <div class="choice-title">¡Bienvenido a la calculadora de tests A/B!</div>
-            <div class="choice-text">
-                Esta calculadora te ayudará a tomar decisiones basadas en datos eligiendo entre el enfoque bayesiano o frecuentista, los dos modelos estadísticos más comunes.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("""
-        <div class="result-card">
-            <div class="choice-title">Elige el modelo que deseas utilizar para analizar tu test A/B</div>
-            <div class="choice-text">¿No sabes cuál elegir? No te preocupes: te explico cada uno de forma sencilla.</div>
-        </div>
-        """, unsafe_allow_html=True)
-
         col1, col2 = st.columns(2, gap="large")
 
         with col1:
@@ -283,7 +305,7 @@ def render_wizard():
                 st.session_state.enfoque = "bayesiano"
                 st.session_state.wizard_step = 2
                 st.rerun()
- 
+
         with col2:
             st.markdown("""
             <div class="choice-card">
@@ -302,9 +324,28 @@ def render_wizard():
                 st.session_state.enfoque = "frecuentista"
                 st.session_state.wizard_step = 2
                 st.rerun()
+    else:
+        enfoque_txt = "Bayesiano" if st.session_state.enfoque == "bayesiano" else "Frecuentista"
+        st.markdown(f"""
+        <div class="success-box">
+            ✅ Seleccionado: <b>{enfoque_txt}</b>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Editar paso 1", key="edit_step_1"):
+            st.session_state.wizard_step = 1
+            st.session_state.session_id = None
+            st.session_state.tipo_valores = None
+            st.session_state.ruta_ok = False
+            st.session_state.selected_model_label = None
+            st.session_state.show_app = False
+            st.rerun()
 
-    # Step 2: Session ID
-    elif step == 2:
+    # --------------------------------------------------
+    # STEP 2: Session ID (aparece cuando step >= 2)
+    # --------------------------------------------------
+    if step >= 2:
+        st.markdown('<div class="section-spacer"></div>', unsafe_allow_html=True)
+
         enfoque_txt = "Bayesiano" if st.session_state.enfoque == "bayesiano" else "Frecuentista"
         st.markdown(f"""
         <div class="result-card">
@@ -325,25 +366,42 @@ def render_wizard():
         </div>
         """, unsafe_allow_html=True)
 
-        c1, c2 = st.columns(2, gap="large")
-        with c1:
-            if st.button("Tengo Session ID", key="btn_sid_yes", type="primary"):
-                st.session_state.session_id = True
-                st.session_state.wizard_step = 3
-                st.rerun()
-        with c2:
-            if st.button("No tengo Session ID", key="btn_sid_no", type="primary"):
-                st.session_state.session_id = False
-                st.session_state.wizard_step = 3
+        if step == 2:
+            c1, c2 = st.columns(2, gap="large")
+            with c1:
+                if st.button("Tengo Session ID", key="btn_sid_yes", type="primary"):
+                    st.session_state.session_id = True
+                    st.session_state.wizard_step = 3
+                    st.rerun()
+            with c2:
+                if st.button("No tengo Session ID", key="btn_sid_no", type="primary"):
+                    st.session_state.session_id = False
+                    st.session_state.wizard_step = 3
+                    st.rerun()
+
+            if st.button("⬅️ Volver", key="back_2"):
+                go_to_step(1)
+        else:
+            sid_txt = "con Session ID" if st.session_state.session_id else "sin Session ID"
+            st.markdown(f"""
+            <div class="success-box">
+                ✅ Seleccionado: <b>{sid_txt}</b>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("Editar paso 2", key="edit_step_2"):
+                st.session_state.wizard_step = 2
+                st.session_state.tipo_valores = None
+                st.session_state.ruta_ok = False
+                st.session_state.selected_model_label = None
+                st.session_state.show_app = False
                 st.rerun()
 
-        st.markdown('<div class="subsection-spacer"></div>', unsafe_allow_html=True)
-        if st.button("⬅️ Volver", key="back_2"):
-            st.session_state.wizard_step = 1
-            st.rerun()
+    # --------------------------------------------------
+    # STEP 3: Tipo valores (aparece cuando step >= 3)
+    # --------------------------------------------------
+    if step >= 3:
+        st.markdown('<div class="section-spacer"></div>', unsafe_allow_html=True)
 
-    # Step 3: tipo valores
-    elif step == 3:
         sid_txt = "con Session ID" if st.session_state.session_id else "sin Session ID"
         st.markdown(f"""
         <div class="result-card">
@@ -364,25 +422,41 @@ def render_wizard():
         </div>
         """, unsafe_allow_html=True)
 
-        c1, c2 = st.columns(2, gap="large")
-        with c1:
-            if st.button("Valores entre 0 y 1", key="btn_01", type="primary"):
-                st.session_state.tipo_valores = "0_1"
-                st.session_state.wizard_step = 4
-                st.rerun()
-        with c2:
-            if st.button("Valores de 0 a infinito", key="btn_0inf", type="primary"):
-                st.session_state.tipo_valores = "0_inf"
-                st.session_state.wizard_step = 4
+        if step == 3:
+            c1, c2 = st.columns(2, gap="large")
+            with c1:
+                if st.button("Valores entre 0 y 1", key="btn_01", type="primary"):
+                    st.session_state.tipo_valores = "0_1"
+                    st.session_state.wizard_step = 4
+                    st.rerun()
+            with c2:
+                if st.button("Valores de 0 a infinito", key="btn_0inf", type="primary"):
+                    st.session_state.tipo_valores = "0_inf"
+                    st.session_state.wizard_step = 4
+                    st.rerun()
+
+            if st.button("⬅️ Volver", key="back_3"):
+                go_to_step(2)
+        else:
+            tipo_txt = "Valores entre 0 y 1" if st.session_state.tipo_valores == "0_1" else "Valores de 0 a infinito"
+            st.markdown(f"""
+            <div class="success-box">
+                ✅ Seleccionado: <b>{tipo_txt}</b>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("Editar paso 3", key="edit_step_3"):
+                st.session_state.wizard_step = 3
+                st.session_state.ruta_ok = False
+                st.session_state.selected_model_label = None
+                st.session_state.show_app = False
                 st.rerun()
 
-        st.markdown('<div class="subsection-spacer"></div>', unsafe_allow_html=True)
-        if st.button("⬅️ Volver", key="back_3"):
-            st.session_state.wizard_step = 2
-            st.rerun()
+    # --------------------------------------------------
+    # STEP 4: Router final (aparece cuando step >= 4)
+    # --------------------------------------------------
+    if step >= 4:
+        st.markdown('<div class="section-spacer"></div>', unsafe_allow_html=True)
 
-    # Step 4: botón final Analizar + router
-    elif step == 4:
         check_route_and_set_model()
 
         if st.session_state.ruta_ok:
@@ -402,20 +476,19 @@ def render_wizard():
             </div>
             """, unsafe_allow_html=True)
 
-            st.markdown('<div class="subsection-spacer"></div>', unsafe_allow_html=True)
             c1, c2, c3 = st.columns([1, 2, 1])
             with c2:
                 if st.button("Analizar test A/B", key="btn_go_app", type="primary"):
-                    # Preparamos calculadora y entramos
                     set_calculadora_from_selected_model()
                     st.session_state.show_app = True
                     st.rerun()
+
         else:
             st.markdown("""
             <div class="warning-box">
                 <b>Todavía no disponible</b><br><br>
                 Con las opciones seleccionadas todavía no tenemos la implementación visual activa.
-                Puedes volver al inicio y elegir una ruta disponible (Bayesiano + sin Session ID + 0/1 o 0–∞).
+                Puedes volver a un paso anterior y elegir una ruta disponible (Bayesiano + sin Session ID + 0/1 o 0–∞).
             </div>
             """, unsafe_allow_html=True)
 
@@ -425,10 +498,8 @@ def render_wizard():
                     reset_wizard()
                     st.rerun()
 
-        st.markdown('<div class="subsection-spacer"></div>', unsafe_allow_html=True)
-        if st.button("⬅️ Volver", key="back_4"):
-            st.session_state.wizard_step = 3
-            st.rerun()
+        if st.button("⬅️ Volver al paso anterior", key="back_4"):
+            go_to_step(3)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -437,7 +508,6 @@ def render_wizard():
 # App actual (tu calculadora)
 # =========================
 def render_calculadora_actual():
-    # Título y descripción
     st.markdown('<h2 class="main-header">Calculadora Bayesiana para Tests A/B</h2>', unsafe_allow_html=True)
     st.markdown("""
     <div class="info-box">
@@ -496,10 +566,7 @@ def render_calculadora_actual():
         st.markdown('<p class="sub-header">Cargar datos desde CSV</p>', unsafe_allow_html=True)
         st.info("💡 Si no sabes cómo preparar tu archivo CSV, revisa la pestaña **'Formato CSV'**.")
 
-        uploaded_file = st.file_uploader(
-            "Selecciona tu archivo CSV",
-            type=["csv"]
-        )
+        uploaded_file = st.file_uploader("Selecciona tu archivo CSV", type=["csv"])
 
         if uploaded_file is not None:
             try:
@@ -515,7 +582,7 @@ def render_calculadora_actual():
                     st.success("✅ ¡Archivo cargado correctamente!")
 
                     st.subheader("Vista previa de tus datos:")
-                    st.dataframe(df, width="stretch")
+                    df_full_width(df)
 
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -621,7 +688,7 @@ def render_calculadora_actual():
             ]
         })
 
-        st.dataframe(requisitos_df, width="stretch", hide_index=True)
+        df_full_width(requisitos_df, hide_index=True)
 
         st.markdown("### 📄 Ejemplo de archivo CSV válido:")
         ejemplo_csv_texto = """Día,Conversiones A,Visitas A,Conversiones B,Visitas B
@@ -707,7 +774,7 @@ def render_calculadora_actual():
                     st.write("**Grupo B**")
                     mean_b = ultimo['alpha_b'] / ultimo['beta_b']
                     st.metric("Tasa de conversión esperada", f"{mean_b:.4f}")
-                    st.write(f"Parámetros: alpha={ultimo['alpha_b']:.1f}, beta={ultimo['beta_b']:.1f}")
+                    st.write(f"Parámetros: alpha={ultimo['alpha_b']:.1f}, beta={ultimo['beta_b']:.1f}")  # ✅ FIX
 
         with res_tab2:
             buffer = io.StringIO()
@@ -875,8 +942,6 @@ def render_calculadora_actual():
 init_wizard_state()
 
 if st.session_state.get("show_app", False):
-    # Entramos en la calculadora (solo si el wizard eligió ruta disponible)
     render_calculadora_actual()
 else:
-    # Siempre empezamos en wizard
     render_wizard()
